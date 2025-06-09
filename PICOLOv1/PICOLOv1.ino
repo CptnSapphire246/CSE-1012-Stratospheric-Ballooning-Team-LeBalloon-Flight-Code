@@ -3,8 +3,8 @@ _____________________________________________________________
 Code for the PICOLO Flight Computer
 Code by: Radhakrishna Vojjala
 Modified by: Nishanth Kavuru
-Date of last modification: 2 Apr 2025
-Version 2.0
+Date of last modification: 3 Apr 2025
+Version 3.0
 _____________________________________________________________
 
 */
@@ -87,31 +87,17 @@ void loop() {
   // Serial Output Thrust Value
   // Read from Channel A with Gain 128, can also try CHAN_A_GAIN_64 or CHAN_B_GAIN_32
   // since the read is blocking this will not be more than 10 or 80 SPS (L or H switch)
-  int32_t weightA128 = hx711.readChannel(CHAN_A_GAIN_128);
+  int32_t weightA128 = hx711.readChannelBlocking(CHAN_A_GAIN_128);
 
 // Set Throttle and Serial Output Throttle Value
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();  // Remove extra spaces/newlines
-
-    int newThrottle = input.toInt();
-      if (newThrottle >= 0 && newThrottle <= 100) {
-        throttle = newThrottle;
-        Serial.print("Throttle set to ")
-        Serial.print(throttle);
-        Serial.println("%");
-      }
-
-    if (input.equalsIgnoreCase("S")) {
-      motorOn = true;;
-    } 
+  if (gpsAltFt == 2500) {
+    throttle = 50;
+    int pulse = map(throttle, 0, 100, 1000, 2000);
+    esc.writeMicroseconds(pulse);
+    delay(10000);
+    pulse = map(0, 0, 100, 1000, 2000);
+    esc.writeMicroseconds(pulse);
   }
-
-  // Only send throttle if motor is ON
-  int pulse = motorOn ? map(throttle, 0, 100, 1000, 2000) : 1000;
-  esc.writeMicroseconds(pulse);
-
-  delay(100);
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
   if ((millis() - nowTimeMS) >= loopTime) {
