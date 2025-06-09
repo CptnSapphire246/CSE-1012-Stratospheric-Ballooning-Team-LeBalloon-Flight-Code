@@ -3,8 +3,8 @@ _____________________________________________________________
 Code for the PICOLO Flight Computer
 Code by: Radhakrishna Vojjala
 Modified by: Nishanth Kavuru
-Date of last modification: 3 Apr 2025
-Version 3.0
+Date of last modification: 6 Apr 2025
+Version 3.5
 _____________________________________________________________
 
 */
@@ -31,7 +31,7 @@ _____________________________________________________________
 
 // Config variables.
 
-  // Define the pins for the HX711 communication
+// Define the pins for the HX711 communication
 const uint8_t DATA_PIN = 12;  // Can use any pins!
 const uint8_t CLOCK_PIN = 13; // Can use any pins!
 
@@ -40,6 +40,10 @@ Adafruit_HX711 hx711(DATA_PIN, CLOCK_PIN);
 Servo esc;
 int throttle = 0;  // Stores throttle value
 bool motorOn = false;  // Motor state
+
+bool usingM8N = true; // true for M8N, false for M9N
+
+bool AltMAX = false; // Indicates whether maximum altitude for recording data has been reached or not
 
 bool usingM8N = true; // true for M8N, false for M9N
 
@@ -87,10 +91,16 @@ void loop() {
   // Serial Output Thrust Value
   // Read from Channel A with Gain 128, can also try CHAN_A_GAIN_64 or CHAN_B_GAIN_32
   // since the read is blocking this will not be more than 10 or 80 SPS (L or H switch)
-  int32_t weightA128 = hx711.readChannelBlocking(CHAN_A_GAIN_128);
+  int32_t weightA128 = hx711.readChannel(CHAN_A_GAIN_128);
 
 // Set Throttle and Serial Output Throttle Value
-  if (gpsAltFt == 2500) {
+  if ((int)gpsAltFt % 2500 == 0 && AltMAX == false) {
+    // Tare
+    for (uint8_t t=0; t<3; t++) {
+      hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+      hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+    }
+    // Set throttle to 50%
     throttle = 50;
     int pulse = map(throttle, 0, 100, 1000, 2000);
     esc.writeMicroseconds(pulse);
@@ -98,6 +108,28 @@ void loop() {
     pulse = map(0, 0, 100, 1000, 2000);
     esc.writeMicroseconds(pulse);
   }
+  // Last propeller thrust trial will be held at 100,000ft
+  else if ((int)gpsAltFt == 100000 && AltMAX == false) {
+    // Tare
+    for (uint8_t t=0; t<3; t++) {
+      hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+      hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+    }
+    // Set throttle to 50%
+    throttle = 50;
+    int pulse = map(throttle, 0, 100, 1000, 2000);
+    esc.writeMicroseconds(pulse);
+    delay(10000);
+    pulse = map(0, 0, 100, 1000, 2000);
+    esc.writeMicroseconds(pulse);
+    AltMAX = true;
+  }
+
+  // Only send throttle if motor is ON
+  int pulse = motorOn ? map(throttle, 0, 100, 1000, 2000) : 1000;
+  esc.writeMicroseconds(pulse);
+
+  delay(100);
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
   if ((millis() - nowTimeMS) >= loopTime) {
