@@ -3,8 +3,8 @@ _____________________________________________________________
 Code for the PICOLO Flight Computer
 Code by: Radhakrishna Vojjala
 Modified by: Nishanth Kavuru
-Date of last modification: 8 Apr 2025
-Version 4.0
+Date of last modification: 10 Apr 2025
+Version 4.5
 _____________________________________________________________
 
 */
@@ -30,6 +30,9 @@ _____________________________________________________________
 #define VERSION "1.0"
 #define ESC_PIN 14  // ESC connected to GP14
 
+// File header. Edit to add columns for other sensors.
+String header = "hh:mm:ss,T(s),T(ms),Hz,Fix Type,PVT,Sats,Date,Time,Lat,Lon,Alt(Ft),Alt(M),HorizAccuracy(MM),VertAccuracy(MM),VertVel(Ft/S),VertVel(M/S),ECEFstat,ECEFX(M),ECEFY(M),ECEFZ(M),NedVelNorth(M/S),NedVelEast(M/S),NedVelDown(M/S),GndSpd(M/S),Head(Deg),PDOP,ExtT(F),ExtT(C),IntT(F),IntT(C),Pa,kPa,ATM,PSI,MSTemp(C),MSTemp(F),Alt SL Ft,Alt SL M,Alt Rel Ft,Alt Rel M,VertVel(ft/s),VertVel(m/s),Accel(x),Accel(y),Accel(z),Deg/S(x),Deg/S(y),Deg/S(z),Ori(x),Ori(y),Ori(z),Mag_T(x),Mag_T(y),Mag_T(z)z`, Thrust, Throttle, Version:" + String(VERSION);
+
 // Config variables.
 
 // Define the pins for the HX711 communication
@@ -46,10 +49,6 @@ bool usingM8N = true; // true for M8N, false for M9N
 int pulse;
 
 // Set the pins for the LEDs
-int Blue = 9;
-int Green = 8;
-int Yellow = 7;
-int Red = 6;
 int color = 9;
 
 void setup() {
@@ -58,15 +57,13 @@ void setup() {
 
 // Thrust Setup
   // wait for serial port to connect. Needed for native USB port only
-  while (!Serial) {
-    delay(10);
-  }
+  
   // Initialize the HX711
   Serial.println("Adafruit HX711 Test!");
   hx711.begin();
   Serial.println("Tareing...."); // read and toss 3 values each
   for (uint8_t t=0; t<3; t++) {
-    hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+    printOLED("Taring\nAttempt: " + String(t+1));
     hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
   }
 
@@ -76,20 +73,14 @@ void setup() {
   esc.writeMicroseconds(1000);  // Min throttle for arming
   delay(3000);
   // Setting the LED pins as output
-  pinMode(Blue, OUTPUT);
-  pinMode(Green, OUTPUT);
-  pinMode(Yellow, OUTPUT);
-  pinMode(Red, OUTPUT);
   pinMode(color, OUTPUT);
 }
-
-// File header. Edit to add columns for other sensors.
-String header = "hh:mm:ss,T(s),T(ms),Hz,Fix Type,PVT,Sats,Date,Time,Lat,Lon,Alt(Ft),Alt(M),HorizAccuracy(MM),VertAccuracy(MM),VertVel(Ft/S),VertVel(M/S),ECEFstat,ECEFX(M),ECEFY(M),ECEFZ(M),NedVelNorth(M/S),NedVelEast(M/S),NedVelDown(M/S),GndSpd(M/S),Head(Deg),PDOP,ExtT(F),ExtT(C),IntT(F),IntT(C),Pa,kPa,ATM,PSI,MSTemp(C),MSTemp(F),Alt SL Ft,Alt SL M,Alt Rel Ft,Alt Rel M,VertVel(ft/s),VertVel(m/s),Accel(x),Accel(y),Accel(z),Deg/S(x),Deg/S(y),Deg/S(z),Ori(x),Ori(y),Ori(z),Mag_T(x),Mag_T(y),Mag_T(z)z`, Thrust, Throttle, Version:" + String(VERSION);
 
 unsigned long lastThrottleUpdate = 0;
 const unsigned long throttleInterval = 2000; // time in ms between throttle changes
 int currentThrottleIndex = 0;
 bool cycleInProgress = false;
+
 
 void loop() {
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -102,14 +93,13 @@ void loop() {
   int currentStep = round(gpsAltFt / 2500.0);  // Closest multiple of 2500
 
   // Set Throttle and Serial Output Throttle Value
-  if (abs(gpsAltFt - (currentStep * 2500)) <= 15 && currentStep != lastAltitudeStep && AltMAX == false) { // && gpsAltFt > 2000
+  if (abs(gpsAltFt - (currentStep * 2500)) <= 15 && currentStep != lastAltitudeStep && AltMAX == false && gpsAltFt > 2000) { 
     // Tare test stand
     //Serial.println("Tareing....");
     for (uint8_t t=0; t<3; t++) {
         hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
       }
-    // Set throttle to 100% and turn on its LED
+    // Set throttle to x% and turn on its LED
     throttle -= 25;
     pulse = map(throttle, 0, 100, 1000, 2000);
     esc.writeMicroseconds(pulse);
@@ -118,7 +108,6 @@ void loop() {
     delay(2000);
     // Set throttle back to zero and tare
     for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
         hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
       }
     pulse = map(0, 0, 100, 1000, 2000);
@@ -129,14 +118,13 @@ void loop() {
     lastAltitudeStep = currentStep;
   }
   // Last propeller thrust trial will be held at 100,000 ft
-  else if (abs(gpsAltFt - 100000) <= 10 && AltMAX == false) {
+  else if (abs(gpsAltFt - 100000) <= 15 && AltMAX == false) {
     // Tare test stand
     //Serial.println("Tareing....");
     for (uint8_t t=0; t<3; t++) {
         hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
       }
-    // Set throttle to 100% and turn on its LED
+    // Set throttle to x% and turn on its LED
     throttle -= 25;
     pulse = map(throttle, 0, 100, 1000, 2000);
     esc.writeMicroseconds(pulse);
@@ -146,11 +134,11 @@ void loop() {
     // Set throttle back to zero and tare
     for (uint8_t t=0; t<3; t++) {
         hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
       }
     pulse = map(0, 0, 100, 1000, 2000);
     digitalWrite(color, LOW);
     --color;
+    AltMAX = true;
   }
   // Default case
   else {
