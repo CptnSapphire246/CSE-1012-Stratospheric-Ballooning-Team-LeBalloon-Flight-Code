@@ -3,8 +3,8 @@ _____________________________________________________________
 Code for the PICOLO Flight Computer
 Code by: Radhakrishna Vojjala
 Modified by: Nishanth Kavuru
-Date of last modification: 12 Apr 2025
-Version 5.0
+Date of last modification: 27 Apr 2025
+Version 5.5B
 _____________________________________________________________
 
 */
@@ -43,13 +43,14 @@ Adafruit_HX711 hx711(DATA_PIN, CLOCK_PIN);
 
 Servo esc;
 int throttle = 0;  // Stores throttle value
+int cc = 0; 
 bool motorOn = false;  // Motor state
 bool AltMAX = false; // Indicates whether maximum altitude for recording data has been reached or not
 bool usingM8N = true; // true for M8N, false for M9N
 int pulse;
 
 // Set the pins for the LEDs
-int color = 9;
+int color = 26;
 
 void setup() {
   systemSetup();
@@ -72,11 +73,6 @@ void setup() {
   Serial.println("Arming ESC...");
   esc.writeMicroseconds(1000);  // Min throttle for arming
   delay(3000);
-  // Setting the LED pins as output
-  pinMode(9, OUTPUT);
-  pinMode(8, OUTPUT);
-  pinMode(7, OUTPUT);
-  pinMode(6, OUTPUT);
 }
 
 unsigned long lastThrottleUpdate = 0;
@@ -92,16 +88,13 @@ int propTime = 0;
 
 void loop() {
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  // Serial Output Thrust Value
-  // Read from Channel A with Gain 128, can also try CHAN_A_GAIN_64
-  // since the read is blocking this will not be more than 10 or 80 SPS (L or H switch)
   int32_t weightA128 = hx711.readChannel(CHAN_A_GAIN_128);
 
   long msec = millis();
   long s = msec/1000;
   currpress = pressPa;
 
-  if (currpress > prevpress && count < 10 && AltMAX == false && s >= 5400 && absAltFt > 70000.00) {
+  if (currpress > prevpress && count < 10 && AltMAX == false && s >= 0 && absAltFt > 70000.00) {
     count++;
   }
   else if (count >= 10 && AltMAX == false) {
@@ -112,30 +105,16 @@ void loop() {
   }
 
   // Set Throttle and Serial Output Throttle Value
-  if (absAltFt < 70000.00 && AltMAX == false && (s % 180) == 0 && propON == false && s > 720) {
+  if (s > 40 && propON == false && cc < 1) {
     propON = true;
-    throttle = 100;
+    throttle = 5;
     propTime = 0;
   }
 
   if (propON == true) { 
-    // Tare test stand
-    //Serial.println("Tareing....");
-    for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-      }
-    // Set throttle to x% and turn on its LED
+    // Set throttle to x%
     pulse = map(throttle, 0, 100, 1000, 2000);
     esc.writeMicroseconds(pulse);
-    //Serial.println(throttle);
-    //Serial.println(s);
-    digitalWrite(color, HIGH);
-    //delay(2000);
-    // Set throttle back to zero and tare
-    for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-      }
-    
     propTime++;
   }
   
@@ -145,18 +124,17 @@ void loop() {
     esc.writeMicroseconds(pulse);
   }
 
-  if (propTime > 4 && propON == true) {
+  if (propTime > 30 && propON == true) {
     pulse = map(0, 0, 100, 1000, 2000);
-    esc.writeMicroseconds(pulse);
-    digitalWrite(color, LOW);
-    throttle -= 25;
+    throttle += 5;
     propTime = 0;
     --color;
   }
 
-  if (color < 6) {
-    color = 9;
+  if (color < 7) {
+    color = 26;
     propON = false;
+    cc = 1;
     throttle = 0;
   }
 
@@ -222,7 +200,7 @@ void loop() {
     sprintf(paddedNumber, "%07ld", gpsLatDec);
     data += String(paddedNumber); // Pad the number with zeros up to 7 digits
     data += ",";
-    OLEDstr += "Lat: " + String(gpsLatInt) + "." + String(paddedNumber) + "\n";
+    //OLEDstr += "Lat: " + String(gpsLatInt) + "." + String(paddedNumber) + "\n";
 
     data += String(gpsLonInt); 
     data += ".";
@@ -230,11 +208,11 @@ void loop() {
     sprintf(paddedNumber, "%07ld", gpsLonDec);
     data += String(paddedNumber); // Pad the number with zeros up to 7 digits
     data += ",";
-    OLEDstr += "Lon: " + String(gpsLonInt) + "." + String(paddedNumber) + "\n";
+    //OLEDstr += "Lon: " + String(gpsLonInt) + "." + String(paddedNumber) + "\n";
 
     data += String(gpsAltFt);
     data += ",";
-    OLEDstr += "GPSft: " + String(gpsAltFt) + "\n";
+    // OLEDstr += "GPSft: " + String(gpsAltFt) + "\n";
     data += String(gpsAltM);
     data += ",";
     data += String(gpsHorizAcc);
@@ -276,6 +254,7 @@ void loop() {
     data += String(pressPa);
     data += ",";
     data += String(presskPa);
+    OLEDstr += "PresskPa: " + String(presskPa) + "\n";
     data += ",";
     data += String(pressATM);
     data += ",";
@@ -326,8 +305,10 @@ void loop() {
     // data from thrust sensor and ESC (throttle percentage)
     data += String(weightA128);
     data += ",";
+    OLEDstr += "Thrust: " + String(weightA128) + "\n";
     data += String(throttle);
     data += ",";
+    OLEDstr += "Throttle(%): " + String(throttle) + "\n";
 
     Serial.println(data);
     SDstatus = logData(data, dataFilename);
