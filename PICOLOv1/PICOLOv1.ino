@@ -3,8 +3,8 @@ _____________________________________________________________
 Code for the PICOLO Flight Computer
 Code by: Radhakrishna Vojjala
 Modified by: Nishanth Kavuru
-Date of last modification: 10 Apr 2025
-Version 4.5
+Date of last modification: 12 Apr 2025
+Version 5.0
 _____________________________________________________________
 
 */
@@ -42,7 +42,7 @@ const uint8_t CLOCK_PIN = 13; // Can use any pins!
 Adafruit_HX711 hx711(DATA_PIN, CLOCK_PIN);
 
 Servo esc;
-int throttle = 100;  // Stores throttle value
+int throttle = 0;  // Stores throttle value
 bool motorOn = false;  // Motor state
 bool AltMAX = false; // Indicates whether maximum altitude for recording data has been reached or not
 bool usingM8N = true; // true for M8N, false for M9N
@@ -73,7 +73,10 @@ void setup() {
   esc.writeMicroseconds(1000);  // Min throttle for arming
   delay(3000);
   // Setting the LED pins as output
-  pinMode(color, OUTPUT);
+  pinMode(9, OUTPUT);
+  pinMode(8, OUTPUT);
+  pinMode(7, OUTPUT);
+  pinMode(6, OUTPUT);
 }
 
 unsigned long lastThrottleUpdate = 0;
@@ -81,6 +84,11 @@ const unsigned long throttleInterval = 2000; // time in ms between throttle chan
 int currentThrottleIndex = 0;
 bool cycleInProgress = false;
 
+int count = 0;
+float currpress = 0;
+float prevpress = 0;
+bool propON = false;
+int propTime = 0;
 
 void loop() {
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -89,67 +97,70 @@ void loop() {
   // since the read is blocking this will not be more than 10 or 80 SPS (L or H switch)
   int32_t weightA128 = hx711.readChannel(CHAN_A_GAIN_128);
 
-  static int lastAltitudeStep = -1;
-  int currentStep = round(gpsAltFt / 2500.0);  // Closest multiple of 2500
+  long msec = millis();
+  long s = msec/1000;
+  currpress = pressPa;
 
-  // Set Throttle and Serial Output Throttle Value
-  if (abs(gpsAltFt - (currentStep * 2500)) <= 15 && currentStep != lastAltitudeStep && AltMAX == false && gpsAltFt > 2000) { 
-    // Tare test stand
-    //Serial.println("Tareing....");
-    for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-      }
-    // Set throttle to x% and turn on its LED
-    throttle -= 25;
-    pulse = map(throttle, 0, 100, 1000, 2000);
-    esc.writeMicroseconds(pulse);
-    //Serial.println(throttle);
-    digitalWrite(color, HIGH);
-    delay(2000);
-    // Set throttle back to zero and tare
-    for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-      }
-    pulse = map(0, 0, 100, 1000, 2000);
-    esc.writeMicroseconds(pulse);
-    digitalWrite(color, LOW);
-    --color;
-
-    lastAltitudeStep = currentStep;
+  if (currpress > prevpress && count < 10 && AltMAX == false && s >= 5400 && absAltFt > 70000.00) {
+    count++;
   }
-  // Last propeller thrust trial will be held at 100,000 ft
-  else if (abs(gpsAltFt - 100000) <= 15 && AltMAX == false) {
-    // Tare test stand
-    //Serial.println("Tareing....");
-    for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-      }
-    // Set throttle to x% and turn on its LED
-    throttle -= 25;
-    pulse = map(throttle, 0, 100, 1000, 2000);
-    esc.writeMicroseconds(pulse);
-    //Serial.println(throttle);
-    digitalWrite(color, HIGH);
-    delay(2000);
-    // Set throttle back to zero and tare
-    for (uint8_t t=0; t<3; t++) {
-        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
-      }
-    pulse = map(0, 0, 100, 1000, 2000);
-    digitalWrite(color, LOW);
-    --color;
+  else if (count >= 10 && AltMAX == false) {
     AltMAX = true;
   }
+  else if (AltMAX == false) {
+    count = 0;
+  }
+
+  // Set Throttle and Serial Output Throttle Value
+  if (absAltFt < 70000.00 && AltMAX == false && (s % 180) == 0 && propON == false && s > 720) {
+    propON = true;
+    throttle = 100;
+    propTime = 0;
+  }
+
+  if (propON == true) { 
+    // Tare test stand
+    //Serial.println("Tareing....");
+    for (uint8_t t=0; t<3; t++) {
+        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+      }
+    // Set throttle to x% and turn on its LED
+    pulse = map(throttle, 0, 100, 1000, 2000);
+    esc.writeMicroseconds(pulse);
+    //Serial.println(throttle);
+    //Serial.println(s);
+    digitalWrite(color, HIGH);
+    //delay(2000);
+    // Set throttle back to zero and tare
+    for (uint8_t t=0; t<3; t++) {
+        hx711.tareA(hx711.readChannelRaw(CHAN_A_GAIN_128));
+      }
+    
+    propTime++;
+  }
+  
   // Default case
   else {
     int pulse = map(0, 0, 100, 1000, 2000);
     esc.writeMicroseconds(pulse);
   }
 
-  if (color <= 6 && throttle < 25) {
-    color = 9;
-    throttle = 100;
+  if (propTime > 4 && propON == true) {
+    pulse = map(0, 0, 100, 1000, 2000);
+    esc.writeMicroseconds(pulse);
+    digitalWrite(color, LOW);
+    throttle -= 25;
+    propTime = 0;
+    --color;
   }
+
+  if (color < 6) {
+    color = 9;
+    propON = false;
+    throttle = 0;
+  }
+
+  prevpress = presskPa;
 
   delay(100);
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
